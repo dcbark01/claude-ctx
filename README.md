@@ -132,6 +132,7 @@ claude-ctx run <ctx> -- [args]   exec claude with the context in its environment
 claude-ctx show [<ctx>]          rendered env block + redacted credential source; --json
 claude-ctx list                  all contexts, current starred; --plain
 claude-ctx current [--plain]     active context; --plain prints `name` (or `name*` on drift) for statuslines
+claude-ctx add [<name>]          interactive form (pass-entry + gateway-model pickers) or flags
 claude-ctx unset                 remove every claude-ctx-managed key from user settings
 claude-ctx doctor [<ctx>]        health check: credential, gateway, model presence, gpg TTL, drift; --no-network
 claude-ctx credential            apiKeyHelper entrypoint (stdout = key, stderr = diagnostics, nonzero on failure)
@@ -147,6 +148,18 @@ Global flags: `--config <file>` (or `$CLAUDE_CTX_CONFIG`), `--settings-path <fil
 - **`run`** injects the env block plus `CLAUDE_CTX=<ctx>` into a child `claude` and passes `--settings '{"apiKeyHelper": …}'`. Two terminals can run two contexts with no shared state. It also strips `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_API_KEY` from the child (they would shadow the helper) and warns.
 
 Both commands **prime** the credential in the foreground first: pinentry appears in your terminal, gpg-agent's cache is warm for Claude Code's later helper calls, and a missing/empty key fails *before* anything is written.
+
+### add
+
+Interactive: `claude-ctx add` asks for name and gateway, then offers the `pass` entries found under `defaults.namespace` (or an env var / command), checks the credential, queries the gateway's `/v1/models` and offers those as the model and alias choices, previews the TOML and appends it — existing comments are preserved.
+
+Scripted:
+
+```sh
+claude-ctx add opus-b --base-url https://litellm-b.internal --model anthropic/claude-opus-5 \
+  --key-pass work/litellm/b/anthropic --display-name "Opus 5 (B)" \
+  --alias opus=anthropic/claude-opus-5 --alias haiku=anthropic/claude-haiku-4-5
+```
 
 ### doctor
 
@@ -209,5 +222,5 @@ Test against scratch files, never your real settings:
 
 ## Roadmap
 
-- **v0.2** — `add` with a `pass ls` tree picker (`doctor` shipped).
+- **v0.2** ✓ — `doctor`, `add`, statusline `--plain`, backups.
 - **v0.3** — `--scope local`, arbitrary per-context `env` passthrough, OS keychain resolver, goreleaser / Homebrew tap.
