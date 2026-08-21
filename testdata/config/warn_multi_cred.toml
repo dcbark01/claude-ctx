@@ -1,0 +1,5 @@
+[contexts.x]
+base_url = "http://localhost"
+model = "m"
+key_env = "K"
+key_cmd = "echo k"

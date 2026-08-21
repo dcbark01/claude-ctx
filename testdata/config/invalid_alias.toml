@@ -1,0 +1,6 @@
+[contexts.x]
+base_url = "http://localhost"
+model = "m"
+key_env = "K"
+  [contexts.x.model_aliases]
+  gpt = "nope"

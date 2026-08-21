@@ -1,0 +1,26 @@
+[defaults]
+key_ttl_ms = 1800000
+namespace  = "myorg/litellm"
+store_dir  = "~/.password-store-work"
+
+[contexts.gpt5-prod]
+base_url = "https://litellm-a.myorg.internal"
+model    = "gpt-5"
+key_pass = "myorg/litellm/deployment-a/gpt5"
+
+[contexts.opus-b]
+base_url = "https://litellm-b.myorg.internal"
+model    = "anthropic/claude-opus-5"
+key_pass = "myorg/litellm/deployment-b/anthropic"
+display_name = "Opus 5 (deployment B)"
+discovery    = true
+
+  [contexts.opus-b.model_aliases]
+  opus   = "anthropic/claude-opus-5"
+  sonnet = "anthropic/claude-sonnet-5"
+  haiku  = "anthropic/claude-haiku-4-5"
+
+[contexts.local-llama]
+base_url = "http://localhost:8080"
+model    = "Qwen3.8-27B"
+key_env  = "LITELLM_LOCAL_KEY"
