@@ -14,6 +14,7 @@ import (
 	"github.com/dcbark01/claude-ctx/internal/cred"
 	"github.com/dcbark01/claude-ctx/internal/gateway"
 	"github.com/dcbark01/claude-ctx/internal/metacache"
+	"github.com/dcbark01/claude-ctx/internal/opencode"
 	"github.com/dcbark01/claude-ctx/internal/render"
 	"github.com/dcbark01/claude-ctx/internal/settings"
 	"github.com/dcbark01/claude-ctx/internal/ui"
@@ -22,6 +23,7 @@ import (
 var (
 	flagConfig       string
 	flagSettingsPath string
+	flagOpencodeDir  string
 	version          = "dev"
 )
 
@@ -49,6 +51,7 @@ func Execute() {
 func init() {
 	rootCmd.PersistentFlags().StringVar(&flagConfig, "config", "", "config file (default $CLAUDE_CTX_CONFIG or ~/.claude/context/config.toml)")
 	rootCmd.PersistentFlags().StringVar(&flagSettingsPath, "settings-path", "", "Claude Code user settings file (default ~/.claude/settings.json)")
+	rootCmd.PersistentFlags().StringVar(&flagOpencodeDir, "opencode-dir", "", "opencode config directory (default $XDG_CONFIG_HOME/opencode or ~/.config/opencode)")
 }
 
 func configPath() string {
@@ -82,6 +85,14 @@ func loadConfig() (*config.Config, error) {
 		return nil, err
 	}
 	return c, nil
+}
+
+// opencodeDir is the opencode global config directory.
+func opencodeDir() string {
+	if flagOpencodeDir != "" {
+		return flagOpencodeDir
+	}
+	return opencode.DefaultDir()
 }
 
 func loadSettings() (map[string]any, error) {
