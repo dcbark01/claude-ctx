@@ -21,6 +21,7 @@ import (
 var addFlags struct {
 	baseURL, model, keyPass, keyCmd, keyEnv, displayName string
 	discovery                                            bool
+	contextLimit, outputLimit                            int64
 	aliases                                              []string
 	noVerify                                             bool
 }
@@ -51,6 +52,7 @@ Existing file content and comments are preserved.`,
 			BaseURL: addFlags.baseURL, Model: addFlags.model,
 			KeyPass: addFlags.keyPass, KeyCmd: addFlags.keyCmd, KeyEnv: addFlags.keyEnv,
 			DisplayName: addFlags.displayName, Discovery: addFlags.discovery,
+			ContextLimit: addFlags.contextLimit, OutputLimit: addFlags.outputLimit,
 		}
 		for _, a := range addFlags.aliases {
 			fam, model, ok := strings.Cut(a, "=")
@@ -304,6 +306,8 @@ func init() {
 	f.StringVar(&addFlags.keyEnv, "key-env", "", "environment variable holding the key")
 	f.StringVar(&addFlags.displayName, "display-name", "", "ANTHROPIC_CUSTOM_MODEL_OPTION_NAME")
 	f.BoolVar(&addFlags.discovery, "discovery", false, "enable gateway model discovery")
+	f.Int64Var(&addFlags.contextLimit, "context-limit", 0, "opencode context window (0 = from gateway /model/info)")
+	f.Int64Var(&addFlags.outputLimit, "output-limit", 0, "opencode max output tokens (0 = from gateway /model/info)")
 	f.StringArrayVar(&addFlags.aliases, "alias", nil, "family=model (repeatable; family ∈ opus,sonnet,haiku,fable)")
 	f.BoolVar(&addFlags.noVerify, "no-verify", false, "interactive: skip the credential/gateway probe")
 	rootCmd.AddCommand(addCmd)

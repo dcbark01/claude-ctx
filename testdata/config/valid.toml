@@ -24,3 +24,5 @@ discovery    = true
 base_url = "http://localhost:8080"
 model    = "Qwen3.8-27B"
 key_env  = "LITELLM_LOCAL_KEY"
+context_limit = 128000
+output_limit  = 8192

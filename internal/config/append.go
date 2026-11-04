@@ -36,6 +36,12 @@ func RenderContext(name string, c Context) string {
 	if c.Discovery {
 		b.WriteString("discovery = true\n")
 	}
+	if c.ContextLimit > 0 {
+		fmt.Fprintf(&b, "context_limit = %d\n", c.ContextLimit)
+	}
+	if c.OutputLimit > 0 {
+		fmt.Fprintf(&b, "output_limit = %d\n", c.OutputLimit)
+	}
 	if len(c.ModelAliases) > 0 {
 		fams := make([]string, 0, len(c.ModelAliases))
 		for f := range c.ModelAliases {

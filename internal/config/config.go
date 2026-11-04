@@ -19,6 +19,12 @@ const DefaultKeyTTLMs int64 = 3600000
 // model_aliases (rendered as ANTHROPIC_DEFAULT_<FAMILY>_MODEL).
 var AliasFamilies = []string{"opus", "sonnet", "haiku", "fable"}
 
+// Clients claude-ctx can launch or configure.
+const (
+	ClientClaude   = "claude"
+	ClientOpencode = "opencode"
+)
+
 // Config is the root of config.toml.
 type Config struct {
 	Defaults Defaults           `toml:"defaults"`
@@ -30,6 +36,7 @@ type Defaults struct {
 	KeyTTLMs  int64  `toml:"key_ttl_ms"`
 	Namespace string `toml:"namespace"`
 	StoreDir  string `toml:"store_dir"`
+	Client    string `toml:"client"` // default for `run --client`; "" means claude
 }
 
 // Context is a single named gateway+model+credential bundle.
@@ -42,6 +49,8 @@ type Context struct {
 	DisplayName  string            `toml:"display_name"`
 	Discovery    bool              `toml:"discovery"`
 	ModelAliases map[string]string `toml:"model_aliases"`
+	ContextLimit int64             `toml:"context_limit"` // opencode only; 0 = from gateway /model/info
+	OutputLimit  int64             `toml:"output_limit"`  // opencode only; 0 = from gateway /model/info
 }
 
 // Warning is a non-fatal validation finding.
@@ -126,6 +135,11 @@ func (c *Config) Validate() ([]Warning, error) {
 	if c.Defaults.KeyTTLMs < 0 {
 		errs = append(errs, "defaults.key_ttl_ms must be >= 0")
 	}
+	switch c.Defaults.Client {
+	case "", ClientClaude, ClientOpencode:
+	default:
+		errs = append(errs, fmt.Sprintf(`defaults.client must be "claude" or "opencode" (got %q)`, c.Defaults.Client))
+	}
 	for _, name := range c.Names() {
 		ctx := c.Contexts[name]
 		pre := fmt.Sprintf("context %q: ", name)
@@ -136,6 +150,12 @@ func (c *Config) Validate() ([]Warning, error) {
 		}
 		if ctx.Model == "" {
 			errs = append(errs, pre+"model is required")
+		}
+		if ctx.ContextLimit < 0 {
+			errs = append(errs, pre+"context_limit must be >= 0")
+		}
+		if ctx.OutputLimit < 0 {
+			errs = append(errs, pre+"output_limit must be >= 0")
 		}
 		n := 0
 		for _, v := range []string{ctx.KeyPass, ctx.KeyCmd, ctx.KeyEnv} {
@@ -195,6 +215,7 @@ const Template = `# claude-ctx configuration
 
 [defaults]
 key_ttl_ms = 3600000            # emitted as CLAUDE_CODE_API_KEY_HELPER_TTL_MS
+# client = "claude"             # default for run --client (claude | opencode)
 # namespace = "work/litellm"    # pass subtree offered by ` + "`add`" + `
 # store_dir = "~/.password-store-work"
 
@@ -204,6 +225,8 @@ key_ttl_ms = 3600000            # emitted as CLAUDE_CODE_API_KEY_HELPER_TTL_MS
 # key_pass = "work/litellm/example/anthropic"   # or key_cmd = "..." / key_env = "VAR"
 # display_name = "Opus 5 (example)"
 # discovery = true
+# context_limit = 200000   # opencode only; else from gateway /model/info
+# output_limit  = 32000
 #   [contexts.example.model_aliases]
 #   opus   = "anthropic/claude-opus-5"
 #   sonnet = "anthropic/claude-sonnet-5"
