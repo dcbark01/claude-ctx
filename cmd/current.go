@@ -30,6 +30,9 @@ suitable for a Claude Code statusline. Exits 1 with no output if none is active.
 		if name == "" {
 			if !currentPlain {
 				fmt.Fprintln(os.Stderr, "no active context")
+				if printOpencodeCurrent() {
+					return nil
+				}
 			}
 			os.Exit(1)
 		}
@@ -45,8 +48,22 @@ suitable for a Claude Code statusline. Exits 1 with no output if none is active.
 		if drift {
 			fmt.Fprintln(os.Stderr, ui.Warn("warning: managed settings were modified outside claude-ctx (run `claude-ctx use "+name+" --force` to re-apply)"))
 		}
+		printOpencodeCurrent()
 		return nil
 	},
+}
+
+// printOpencodeCurrent prints "opencode: <ctx>[*]" when `use` has set opencode.
+func printOpencodeCurrent() bool {
+	oc, drift := opencodeCurrent(statePath())
+	if oc == "" {
+		return false
+	}
+	if drift {
+		oc += "*"
+	}
+	fmt.Println("opencode: " + oc)
+	return true
 }
 
 func init() {

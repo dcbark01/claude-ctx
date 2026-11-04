@@ -18,6 +18,9 @@ type Opencode struct {
 	Context string            `json:"context"`
 	Path    string            `json:"path"`
 	Values  map[string]string `json:"values"`
+	// Previous holds the values these keys had before the first `use`, so
+	// `unset` can restore them; a key absent here was absent from the file.
+	Previous map[string]string `json:"previous,omitempty"`
 }
 
 // State is the root of state.json.
