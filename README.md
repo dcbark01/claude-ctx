@@ -1,6 +1,6 @@
 # claude-ctx
 
-Context switching for [Claude Code](https://docs.anthropic.com/en/docs/claude-code): named bundles of **gateway URL + model + credential source**, switched with one command. Ergonomics modeled on `docker context` / `kubectx`.
+Context switching for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and [opencode](https://opencode.ai): named bundles of **gateway URL + model + credential source**, switched with one command. Ergonomics modeled on `docker context` / `kubectx`.
 
 ```
 $ claude-ctx list
@@ -85,6 +85,7 @@ Requires macOS/Linux, Go 1.22+, and (for `key_pass`) [`pass`](https://www.passwo
 ```toml
 [defaults]
 key_ttl_ms = 3600000                  # → CLAUDE_CODE_API_KEY_HELPER_TTL_MS
+# client = "claude"                   # default for `run --client` (claude | opencode)
 # store_dir = "~/.password-store-work"  # → PASSWORD_STORE_DIR (split pass stores)
 
 [contexts.gpt5-prod]
@@ -121,21 +122,26 @@ key_env  = "LOCAL_KEY"                   # alternative sources:
 | `model_aliases.{opus,sonnet,haiku,fable}` | no | `ANTHROPIC_DEFAULT_<FAMILY>_MODEL` |
 | `display_name` | no | `ANTHROPIC_CUSTOM_MODEL_OPTION` + `_NAME` |
 | `discovery` | no | `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1` |
+| `context_limit` / `output_limit` | no | opencode only: the model's token limits (else from the gateway's `/model/info`, else opencode's 200k / 32k) |
 
 Credential precedence when several are set: `key_pass` → `key_cmd` → `key_env` (with a warning). For `key_pass`, only the **first line** of the entry is used, per `pass` convention. Unknown TOML keys are rejected.
 
 ## Commands
 
 ```
-claude-ctx use [<ctx>]           persistent switch (no arg → interactive picker); --force to overwrite external edits
-claude-ctx run <ctx> -- [args]   exec claude with the context in its environment; zero file mutation
+claude-ctx use [<ctx>]           persistent switch (no arg → interactive picker); --force to overwrite external edits;
+                                 --client claude|opencode (default: every installed client)
+claude-ctx run <ctx> -- [args]   exec claude (or --client opencode) with the context in its environment; zero file mutation
 claude-ctx show [<ctx>]          rendered env block + redacted credential source; --json
 claude-ctx list                  all contexts, current starred; --plain
 claude-ctx current [--plain]     active context; --plain prints `name` (or `name*` on drift) for statuslines
 claude-ctx add [<name>]          interactive form (pass-entry + gateway-model pickers) or flags
-claude-ctx unset                 remove every claude-ctx-managed key from user settings
-claude-ctx doctor [<ctx>]        health check: credential, gateway, model presence, gpg TTL, drift; --no-network
-claude-ctx credential            apiKeyHelper entrypoint (stdout = key, stderr = diagnostics, nonzero on failure)
+claude-ctx unset                 remove every claude-ctx-managed key from user settings, and undo `use` in opencode
+claude-ctx doctor [<ctx>]        health check: credential, gateway, model presence, gpg TTL, drift, opencode; --no-network
+claude-ctx credential            apiKeyHelper entrypoint (stdout = key, stderr = diagnostics, nonzero on failure);
+                                 --context <ctx> picks the context (used by the opencode plugin)
+claude-ctx opencode install      install/upgrade the opencode plugin (opencode v2+); `uninstall` removes it
+claude-ctx opencode providers    the opencode providers generated from config (--json is what the plugin reads)
 claude-ctx edit                  $EDITOR on config.toml, re-validate on save
 claude-ctx completion <shell>    shell completions
 ```
@@ -148,6 +154,23 @@ Global flags: `--config <file>` (or `$CLAUDE_CTX_CONFIG`), `--settings-path <fil
 - **`run`** injects the env block plus `CLAUDE_CTX=<ctx>` into a child `claude` and passes `--settings '{"apiKeyHelper": …}'`. Two terminals can run two contexts with no shared state. It also strips `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_API_KEY` from the child (they would shadow the helper) and warns.
 
 Both commands **prime** the credential in the foreground first: pinentry appears in your terminal, gpg-agent's cache is warm for Claude Code's later helper calls, and a missing/empty key fails *before* anything is written.
+
+### opencode
+
+The same contexts drive [opencode](https://opencode.ai) v2+. opencode has no `apiKeyHelper`, and the keys it saves itself sit in plaintext in its database, so claude-ctx ships an opencode plugin instead:
+
+```sh
+claude-ctx opencode install          # writes ~/.config/opencode/plugins/claude-ctx.ts
+claude-ctx use opus-b                # switches Claude Code *and* opencode
+opencode                             # every context is a provider: ctx-<name>/<model>
+claude-ctx run local --client opencode -- run "hello"   # this terminal only
+```
+
+- **Providers.** The plugin asks `claude-ctx opencode providers --json` for one provider per context (`ctx-<name>`, Anthropic protocol at `<base_url>/v1`). It lists `model` plus any `model_aliases` (and, with `discovery = true`, every gateway model), and reloads when `config.toml` changes. All contexts sit in opencode's model picker at once.
+- **Keys never touch disk.** Before each model request the plugin sets `x-api-key` from `claude-ctx credential --context <name>`, held in opencode's memory for `key_ttl_ms`. A 401 drops the cached key. If the key can't be fetched (e.g. a cold gpg-agent; there is no terminal for pinentry inside opencode), the request fails with a message to run `claude-ctx doctor <ctx>`. `use` and `run` check the credential in the foreground first, which warms the cache.
+- **`use`** sets `model` (and `small_model`, from a `haiku` alias) in `~/.config/opencode/opencode.json[c]`, keeping your comments and formatting. What it wrote is recorded in `~/.claude/context/state.json`; edits made outside claude-ctx are detected (`--force` overrides), and `unset` restores the values you had before.
+- **`run --client opencode`** execs `opencode --standalone` with `OPENCODE_CONFIG_CONTENT` selecting the context's models. Nothing is written; set `defaults.client = "opencode"` to make it the default.
+- **Model limits.** opencode needs a context window to know when to compact. `use`, `run`, `doctor` and `add` read it from LiteLLM's `/model/info` in the foreground and keep it in `~/.claude/context/cache.json` (model lists and limits only, never keys). Set `context_limit` / `output_limit` to override.
 
 ### add
 
@@ -175,7 +198,7 @@ $ claude-ctx doctor
 ✗  opus-b  alias haiku         anthropic/claude-haiku-4 not in gateway list (did you mean: anthropic/claude-haiku-4-5?)
 ```
 
-Per context: the credential resolves and is clean, `GET <base_url>/v1/models` succeeds with it, and `model` plus every `model_aliases` value exists on the gateway. Globally: `claude-ctx` is on PATH, no `ANTHROPIC_AUTH_TOKEN`/`ANTHROPIC_API_KEY` shadows the helper, managed settings aren't drifted, enterprise managed-settings don't override our keys, and gpg-agent's cache TTL covers `key_ttl_ms`. Exits 1 on any ✗.
+Per context: the credential resolves and is clean, `GET <base_url>/v1/models` succeeds with it, and `model` plus every `model_aliases` value exists on the gateway. Globally: `claude-ctx` is on PATH, no `ANTHROPIC_AUTH_TOKEN`/`ANTHROPIC_API_KEY` shadows the helper, managed settings aren't drifted, enterprise managed-settings don't override our keys, and gpg-agent's cache TTL covers `key_ttl_ms`. When opencode is installed: it is v2+, the plugin is installed and matches this binary, the `claude-ctx` the plugin will call is the same version, opencode's default `model` names an existing context, and each context's token limits are known. Exits 1 on any ✗.
 
 ### Statusline
 
@@ -210,7 +233,7 @@ Writes are atomic (temp file + rename, mode preserved) and the previous contents
 
 ```sh
 make build   # → ./claude-ctx
-make test    # go test ./... -race (golden tests for the settings merge live in testdata/settings)
+make test    # go test ./... -race, plus the plugin's `bun test` when bun is installed
 make lint
 ```
 
@@ -222,5 +245,5 @@ Test against scratch files, never your real settings:
 
 ## Roadmap
 
-- **v0.2** ✓ — `doctor`, `add`, statusline `--plain`, backups.
+- **v0.2** ✓ — `doctor`, `add`, statusline `--plain`, backups, opencode support.
 - **v0.3** — `--scope local`, arbitrary per-context `env` passthrough, OS keychain resolver, goreleaser / Homebrew tap.

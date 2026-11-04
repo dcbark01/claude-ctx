@@ -1,6 +1,6 @@
 # opencode support
 
-Status: agreed 2026-11-04. Implementation plan: `docs/superpowers/plans/2026-11-04-opencode-support.md`.
+Status: implemented 2026-11-04 (branch `opencode-support`). Implementation plan: `docs/superpowers/plans/2026-11-04-opencode-support.md`.
 
 ## Goal
 
