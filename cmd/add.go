@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/dcbark01/claude-ctx/internal/config"
 	"github.com/dcbark01/claude-ctx/internal/cred"
 	"github.com/dcbark01/claude-ctx/internal/gateway"
+	"github.com/dcbark01/claude-ctx/internal/metacache"
 	"github.com/dcbark01/claude-ctx/internal/passstore"
 	"github.com/dcbark01/claude-ctx/internal/ui"
 )
@@ -64,9 +66,10 @@ Existing file content and comments are preserved.`,
 			}
 			cx.ModelAliases[fam] = model
 		}
+		var probe gatewayProbe
 		nonInteractive := cmd.Flags().NFlag() > 0 || !ui.IsTTY()
 		if !nonInteractive {
-			if err := addForm(cfg, &name, &cx); err != nil {
+			if err := addForm(cfg, &name, &cx, &probe); err != nil {
 				return err
 			}
 		}
@@ -79,14 +82,21 @@ Existing file content and comments are preserved.`,
 		if err := config.AppendContext(configPath(), name, cx); err != nil {
 			return err
 		}
+		saveProbe(name, cx, probe.models, probe.limits)
 		fmt.Printf("%s added context %s to %s\n", ui.OK("✓"), name, configPath())
 		fmt.Println(ui.Muted("next: claude-ctx doctor " + name + "  ·  claude-ctx use " + name))
 		return nil
 	},
 }
 
-// addForm drives the interactive flow. It mutates name/cx in place.
-func addForm(cfg *config.Config, name *string, cx *config.Context) error {
+// gatewayProbe is what the interactive form learned from the gateway.
+type gatewayProbe struct {
+	models []string
+	limits map[string]gateway.Limits
+}
+
+// addForm drives the interactive flow. It mutates name/cx/probe in place.
+func addForm(cfg *config.Config, name *string, cx *config.Context, probe *gatewayProbe) error {
 	// --- Step 1: name + gateway ---
 	step1 := huh.NewForm(huh.NewGroup(
 		huh.NewInput().Title("Context name").Placeholder("opus-b").Value(name).
@@ -171,7 +181,8 @@ func addForm(cfg *config.Config, name *string, cx *config.Context) error {
 	var models []string
 	if !addFlags.noVerify {
 		fmt.Fprintln(os.Stderr, ui.Muted("checking credential and querying "+cx.BaseURL+"/v1/models…"))
-		models = probeModels(cfg, *cx)
+		models, probe.limits = probeGateway(cfg, *cx)
+		probe.models = models
 	}
 	if len(models) > 0 {
 		const other = "\x00other"
@@ -196,6 +207,21 @@ func addForm(cfg *config.Config, name *string, cx *config.Context) error {
 		)).Run(); err != nil {
 			return err
 		}
+	}
+
+	// --- Step 3b: token limits for opencode, only when the gateway can't say ---
+	if cx.ContextLimit == 0 && probe.limits[cx.Model] == (gateway.Limits{}) {
+		var ctxIn, outIn string
+		if err := huh.NewForm(huh.NewGroup(
+			huh.NewInput().Title("Context limit in tokens (opencode; blank = opencode default)").Placeholder("128000").
+				Value(&ctxIn).Validate(func(s string) error { _, err := parseLimitInput(s); return err }),
+			huh.NewInput().Title("Output limit in tokens (blank = opencode default)").Placeholder("8192").
+				Value(&outIn).Validate(func(s string) error { _, err := parseLimitInput(s); return err }),
+		)).Run(); err != nil {
+			return err
+		}
+		cx.ContextLimit, _ = parseLimitInput(ctxIn)
+		cx.OutputLimit, _ = parseLimitInput(outIn)
 	}
 
 	// --- Step 4: optional aliases ---
@@ -266,28 +292,60 @@ func pickModel(title string, models []string, def string) (string, error) {
 	return choice, err
 }
 
-// probeModels resolves the credential and lists gateway models; any failure
-// is reported on stderr and yields nil so the form falls back to free text.
-func probeModels(cfg *config.Config, cx config.Context) []string {
+// probeGateway resolves the key and asks the gateway for its models and (if it
+// is LiteLLM) their token limits. Failures are warnings; results may be empty.
+func probeGateway(cfg *config.Config, cx config.Context) ([]string, map[string]gateway.Limits) {
 	r, err := cred.ForContext(cx, cfg.Defaults)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	key, err := r.Resolve(ctx)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, ui.Warn("credential check failed: "+strings.ReplaceAll(err.Error(), "\n", " ")))
-		return nil
+		return nil, nil
 	}
-	gctx, gcancel := context.WithTimeout(context.Background(), gateway.DefaultTimeout)
+	gctx, gcancel := context.WithTimeout(context.Background(), 2*gateway.DefaultTimeout)
 	defer gcancel()
 	models, err := gateway.ListModels(gctx, cx.BaseURL, key)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, ui.Warn("gateway probe failed: "+err.Error()))
-		return nil
 	}
-	return models
+	limits, _ := gateway.ModelInfo(gctx, cx.BaseURL, key) // optional: LiteLLM only
+	return models, limits
+}
+
+// parseLimitInput parses an optional token limit typed into the form.
+func parseLimitInput(s string) (int64, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, nil
+	}
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil || n <= 0 {
+		return 0, errors.New("a positive number of tokens, or blank")
+	}
+	return n, nil
+}
+
+// saveProbe records what probeGateway learned in the metadata cache.
+func saveProbe(name string, cx config.Context, models []string, limits map[string]gateway.Limits) {
+	if len(models) == 0 && len(limits) == 0 {
+		return
+	}
+	cache, err := metacache.Load(cachePath())
+	if err != nil {
+		return
+	}
+	fresh := metacache.Entry{Updated: time.Now().UTC(), Limits: limits}
+	if cx.Discovery {
+		fresh.Models = models
+	}
+	cache.Contexts[name] = metacache.Merge(cache.Contexts[name], fresh)
+	if err := cache.Save(cachePath()); err != nil {
+		fmt.Fprintln(os.Stderr, ui.Warn("warning: could not save metadata cache: "+err.Error()))
+	}
 }
 
 func nonEmpty(s string) error {

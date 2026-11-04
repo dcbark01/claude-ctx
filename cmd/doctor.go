@@ -45,7 +45,7 @@ var (
 
 var doctorCmd = &cobra.Command{
 	Use:   "doctor [context]",
-	Short: "Validate contexts: credentials, gateway reachability, model presence, gpg TTL, settings drift",
+	Short: "Validate contexts: credentials, gateway reachability, model presence, gpg TTL, settings drift, opencode",
 	Long: `Runs a health check per context (all contexts with no argument) plus global
 checks on the environment and user settings. Credentials are resolved in the
 foreground, so pinentry may appear. Exits 1 if any check fails.`,
@@ -69,9 +69,11 @@ foreground, so pinentry may appear. Exits 1 if any check fails.`,
 		}
 		var checks []check
 		checks = append(checks, globalChecks(c, doc)...)
+		ocInstalled := opencodeInstalled()
 		for _, n := range names {
-			checks = append(checks, contextChecks(c, n)...)
+			checks = append(checks, contextChecks(c, n, ocInstalled)...)
 		}
+		checks = append(checks, opencodeChecks(c, names, opencodeDir(), opencodeBinary())...)
 		printChecks(checks)
 		for _, ch := range checks {
 			if ch.status == statusFail {
@@ -169,7 +171,7 @@ func globalChecks(c *config.Config, doc map[string]any) []check {
 	return out
 }
 
-func contextChecks(c *config.Config, name string) []check {
+func contextChecks(c *config.Config, name string, refreshOpencode bool) []check {
 	var out []check
 	add := func(n string, st status, detail string) {
 		out = append(out, check{name, n, st, detail})
@@ -200,6 +202,9 @@ func contextChecks(c *config.Config, name string) []check {
 	if doctorNoNetwork {
 		add("gateway", statusSkip, "--no-network")
 		return out
+	}
+	if refreshOpencode {
+		refreshMeta(c, name, key)
 	}
 	gctx, gcancel := context.WithTimeout(context.Background(), gateway.DefaultTimeout)
 	defer gcancel()

@@ -56,6 +56,22 @@ func InstalledPluginVersion(path string) (version string, ok bool) {
 	return v, found && v != ""
 }
 
+var binLineRe = regexp.MustCompile(`(?m)^const BIN: string = (.*)$`)
+
+// InstalledPluginBin returns the claude-ctx path baked into an installed plugin.
+func InstalledPluginBin(path string) (string, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", false
+	}
+	m := binLineRe.FindSubmatch(data)
+	var bin string
+	if m == nil || json.Unmarshal(m[1], &bin) != nil {
+		return "", false
+	}
+	return bin, true
+}
+
 var semverRe = regexp.MustCompile(`v?(\d+)\.(\d+)\.(\d+)`)
 
 // ParseVersion extracts the first vMAJOR.MINOR.PATCH from `opencode --version`.

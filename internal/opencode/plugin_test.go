@@ -63,3 +63,14 @@ func TestPluginPath(t *testing.T) {
 		t.Errorf("got %s", got)
 	}
 }
+
+func TestInstalledPluginBin(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "claude-ctx.ts")
+	os.WriteFile(p, PluginSource(`/a "b"/claude-ctx`, "1", nil), 0o644)
+	if bin, ok := InstalledPluginBin(p); !ok || bin != `/a "b"/claude-ctx` {
+		t.Errorf("got %q %v", bin, ok)
+	}
+	if _, ok := InstalledPluginBin(filepath.Join(t.TempDir(), "missing.ts")); ok {
+		t.Error("missing file")
+	}
+}
