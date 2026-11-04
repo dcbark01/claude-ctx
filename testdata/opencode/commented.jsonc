@@ -1,0 +1,10 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  // my default model
+  "model": "anthropic/claude-sonnet-5",
+  /* plugins I use */
+  "plugin": ["opencode-foo"],
+  "provider": {
+    "anthropic": { "options": { "timeout": 600000 } }, // trailing comma below
+  },
+}
