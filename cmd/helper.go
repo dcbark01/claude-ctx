@@ -57,6 +57,19 @@ func configArg() string {
 	return " --config " + shellQuote(abs)
 }
 
+// configArgs is configArg in argv form: ["--config", <abs>] when a
+// non-default config is in use, nil otherwise.
+func configArgs() []string {
+	if flagConfig == "" {
+		return nil
+	}
+	abs, err := filepath.Abs(flagConfig)
+	if err != nil {
+		abs = flagConfig
+	}
+	return []string{"--config", abs}
+}
+
 // absConfigPath is the config path to hand to child processes.
 func absConfigPath() string {
 	abs, err := filepath.Abs(configPath())
