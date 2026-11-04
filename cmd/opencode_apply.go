@@ -2,10 +2,14 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"sort"
+	"strings"
 
 	"github.com/dcbark01/claude-ctx/internal/config"
 	"github.com/dcbark01/claude-ctx/internal/opencode"
 	"github.com/dcbark01/claude-ctx/internal/state"
+	"github.com/dcbark01/claude-ctx/internal/ui"
 )
 
 var managedOpencodeKeys = []string{opencode.KeyModel, opencode.KeySmallModel}
@@ -45,6 +49,19 @@ func opencodeDriftError(statePath string) error {
 			st.Opencode.Path, st.Opencode.Context)
 	}
 	return nil
+}
+
+// opencodePreflight runs every check `use` needs before it writes anything:
+// the target config parses, and (unless force) it was not edited since the
+// last `use`.
+func opencodePreflight(statePath, ocDir string, force bool) error {
+	if _, err := opencode.ReadKeys(opencode.ConfigFile(ocDir), managedOpencodeKeys); err != nil {
+		return err
+	}
+	if force {
+		return nil
+	}
+	return opencodeDriftError(statePath)
 }
 
 // applyOpencode points opencode's default (and small) model at a context.
@@ -98,17 +115,31 @@ func removeOpencode(statePath string) (prevCtx string, had bool, err error) {
 		return "", false, err
 	}
 	o := st.Opencode
+	cur, err := opencode.ReadKeys(o.Path, managedOpencodeKeys)
+	if err != nil {
+		return "", false, err
+	}
 	set := map[string]string{}
-	var remove []string
-	for k := range o.Values {
+	var remove, kept []string
+	for k, v := range o.Values {
+		if c, ok := cur[k]; !ok || c != v {
+			kept = append(kept, k) // edited (or file removed) since `use`: the user's value wins
+			continue
+		}
 		if p, ok := o.Previous[k]; ok {
 			set[k] = p
 		} else {
 			remove = append(remove, k)
 		}
 	}
-	if err := opencode.SetKeys(o.Path, set, remove); err != nil {
-		return "", false, err
+	if len(set) > 0 || len(remove) > 0 {
+		if err := opencode.SetKeys(o.Path, set, remove); err != nil {
+			return "", false, err
+		}
+	}
+	if len(kept) > 0 {
+		sort.Strings(kept)
+		fmt.Fprintln(os.Stderr, ui.Warn("note: left "+strings.Join(kept, ", ")+" in "+o.Path+" as is (changed since `use "+o.Context+"`)"))
 	}
 	st.Opencode = nil
 	return o.Context, true, st.Save(statePath)

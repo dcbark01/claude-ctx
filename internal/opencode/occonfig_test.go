@@ -108,3 +108,22 @@ func TestConfigFilePrefersJSONC(t *testing.T) {
 		t.Errorf("both: %s", got)
 	}
 }
+
+func TestSetKeysKeepsTrailingCommentOnLastMember(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "opencode.jsonc")
+	os.WriteFile(p, []byte("{\n  \"model\": \"x\",\n  \"theme\": \"dark\" // my theme\n}\n"), 0o644)
+	if err := SetKeys(p, map[string]string{KeySmallModel: "ctx-a/h"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(p)
+	if !strings.Contains(string(got), "// my theme") {
+		t.Fatalf("comment lost after add:\n%s", got)
+	}
+	if err := SetKeys(p, nil, []string{KeySmallModel}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = os.ReadFile(p)
+	if !strings.Contains(string(got), "// my theme") {
+		t.Errorf("comment lost after remove:\n%s", got)
+	}
+}

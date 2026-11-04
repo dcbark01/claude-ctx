@@ -82,7 +82,9 @@ Existing file content and comments are preserved.`,
 		if err := config.AppendContext(configPath(), name, cx); err != nil {
 			return err
 		}
-		saveProbe(name, cx, probe.models, probe.limits)
+		if opencodeInstalled() {
+			saveProbe(name, cx, probe.models, probe.limits)
+		}
 		fmt.Printf("%s added context %s to %s\n", ui.OK("✓"), name, configPath())
 		fmt.Println(ui.Muted("next: claude-ctx doctor " + name + "  ·  claude-ctx use " + name))
 		return nil
@@ -210,7 +212,7 @@ func addForm(cfg *config.Config, name *string, cx *config.Context, probe *gatewa
 	}
 
 	// --- Step 3b: token limits for opencode, only when the gateway can't say ---
-	if cx.ContextLimit == 0 && probe.limits[cx.Model] == (gateway.Limits{}) {
+	if wantLimitPrompt(opencodeInstalled(), *cx, probe.limits) {
 		var ctxIn, outIn string
 		if err := huh.NewForm(huh.NewGroup(
 			huh.NewInput().Title("Context limit in tokens (opencode; blank = opencode default)").Placeholder("128000").
@@ -314,6 +316,12 @@ func probeGateway(cfg *config.Config, cx config.Context) ([]string, map[string]g
 	}
 	limits, _ := gateway.ModelInfo(gctx, cx.BaseURL, key) // optional: LiteLLM only
 	return models, limits
+}
+
+// wantLimitPrompt: ask for token limits only for opencode users, and only when
+// neither a flag nor the gateway's /model/info supplied them.
+func wantLimitPrompt(opencodeInstalled bool, cx config.Context, limits map[string]gateway.Limits) bool {
+	return opencodeInstalled && cx.ContextLimit == 0 && cx.OutputLimit == 0 && limits[cx.Model] == (gateway.Limits{})
 }
 
 // parseLimitInput parses an optional token limit typed into the form.

@@ -3,6 +3,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -134,6 +135,28 @@ func primeKey(c *config.Config, name string, timeout time.Duration) (string, err
 	return key, nil
 }
 
+// refreshWarnings turns a metacache.Refresh error into warning lines. A gateway
+// without /model/info is normal (not LiteLLM) and is reported by doctor, not here.
+func refreshWarnings(name string, err error) []string {
+	if err == nil {
+		return nil
+	}
+	errs := []error{err}
+	if j, ok := err.(interface{ Unwrap() []error }); ok {
+		errs = j.Unwrap()
+	}
+	var out []string
+	for _, e := range errs {
+		if errors.Is(e, gateway.ErrNoModelInfo) {
+			continue
+		}
+		for _, line := range strings.Split(e.Error(), "\n") {
+			out = append(out, fmt.Sprintf("warning: %s: %s", name, line))
+		}
+	}
+	return out
+}
+
 // cachePath is the metadata cache next to the active config file.
 func cachePath() string { return metacache.PathFor(absConfigPath()) }
 
@@ -153,10 +176,8 @@ func refreshMeta(c *config.Config, name, key string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*gateway.DefaultTimeout)
 	defer cancel()
 	fresh, rerr := metacache.Refresh(ctx, cx, key)
-	if rerr != nil {
-		for _, line := range strings.Split(rerr.Error(), "\n") {
-			fmt.Fprintln(os.Stderr, ui.Warn(fmt.Sprintf("warning: %s: %s", name, line)))
-		}
+	for _, w := range refreshWarnings(name, rerr) {
+		fmt.Fprintln(os.Stderr, ui.Warn(w))
 	}
 	cache.Contexts[name] = metacache.Merge(cache.Contexts[name], fresh)
 	if err := cache.Save(cachePath()); err != nil {

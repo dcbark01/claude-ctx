@@ -30,7 +30,8 @@ func TestModelInfoLiteLLM(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]Limits{"m1": {128000, 8192}, "m2": {200000, 0}}
+	// max_tokens is LiteLLM's legacy output limit, never the context window.
+	want := map[string]Limits{"m1": {128000, 8192}, "m2": {0, 200000}}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v want %v", got, want)
 	}
@@ -57,5 +58,20 @@ func TestModelInfoUnsupported(t *testing.T) {
 	_, err := ModelInfo(context.Background(), srv.URL, "k")
 	if !errors.Is(err, ErrNoModelInfo) {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestModelInfoMaxTokensIsOutputOnly(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"data":[{"model_name":"p","model_info":{"max_tokens":8192}},
+		  {"model_name":"q","model_info":{"max_tokens":8192,"max_output_tokens":4096}}]}`))
+	}))
+	defer srv.Close()
+	got, err := ModelInfo(context.Background(), srv.URL, "k")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["p"] != (Limits{Context: 0, Output: 8192}) || got["q"] != (Limits{Context: 0, Output: 4096}) {
+		t.Errorf("got %v", got)
 	}
 }

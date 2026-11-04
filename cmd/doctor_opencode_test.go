@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/dcbark01/claude-ctx/internal/config"
+	"github.com/dcbark01/claude-ctx/internal/gateway"
 	"github.com/dcbark01/claude-ctx/internal/opencode"
 )
 
@@ -112,5 +113,22 @@ func TestParseLimitInput(t *testing.T) {
 		if _, err := parseLimitInput(bad); err == nil {
 			t.Errorf("%q accepted", bad)
 		}
+	}
+}
+
+func TestWantLimitPrompt(t *testing.T) {
+	cx := config.Context{Model: "m"}
+	if wantLimitPrompt(false, cx, nil) {
+		t.Error("prompted although opencode plugin not installed")
+	}
+	if !wantLimitPrompt(true, cx, nil) {
+		t.Error("no prompt with opencode and no known limits")
+	}
+	if wantLimitPrompt(true, cx, map[string]gateway.Limits{"m": {Context: 1}}) {
+		t.Error("prompted although /model/info knows the limits")
+	}
+	cx.ContextLimit = 5
+	if wantLimitPrompt(true, cx, nil) {
+		t.Error("prompted although --context-limit given")
 	}
 }

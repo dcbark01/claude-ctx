@@ -155,3 +155,57 @@ func TestOpencodeCurrent(t *testing.T) {
 		t.Errorf("drift: %q %v", n, d)
 	}
 }
+
+func TestRemoveOpencodeKeepsHandEdits(t *testing.T) {
+	sp, dir, cfg := ocFixture(t, `{"model": "mine"}`)
+	applyOpencode(sp, dir, "a", ctxWithHaiku, false)
+	opencode.SetKeys(cfg, map[string]string{"model": "hand-edited"}, nil)
+	if _, had, err := removeOpencode(sp); err != nil || !had {
+		t.Fatalf("had=%v err=%v", had, err)
+	}
+	got := readOC(t, cfg)
+	if got["model"] != "hand-edited" {
+		t.Errorf("hand edit overwritten: %v", got)
+	}
+	if _, ok := got["small_model"]; ok {
+		t.Errorf("unedited managed key not reverted: %v", got)
+	}
+	if st, _ := state.Load(sp); st.Opencode != nil {
+		t.Error("state not cleared")
+	}
+}
+
+func TestRemoveOpencodeMissingFile(t *testing.T) {
+	sp, dir, cfg := ocFixture(t, `{}`)
+	applyOpencode(sp, dir, "a", ctxNoHaiku, false)
+	os.Remove(cfg)
+	if _, _, err := removeOpencode(sp); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(cfg); err == nil {
+		t.Error("unset recreated a deleted config file")
+	}
+}
+
+func TestOpencodePreflightInvalidConfig(t *testing.T) {
+	sp, dir, _ := ocFixture(t, `{"model": `)
+	if err := opencodePreflight(sp, dir, true); err == nil {
+		t.Error("unparseable opencode config passed preflight (even --force must not skip parsing)")
+	}
+	sp, dir, _ = ocFixture(t, `{"model": "x"}`)
+	if err := opencodePreflight(sp, dir, false); err != nil {
+		t.Errorf("valid config: %v", err)
+	}
+}
+
+func TestOpencodePreflightDrift(t *testing.T) {
+	sp, dir, cfg := ocFixture(t, `{}`)
+	applyOpencode(sp, dir, "a", ctxNoHaiku, false)
+	opencode.SetKeys(cfg, map[string]string{"model": "hand"}, nil)
+	if err := opencodePreflight(sp, dir, false); err == nil || !strings.Contains(err.Error(), "modified outside claude-ctx") {
+		t.Errorf("err = %v", err)
+	}
+	if err := opencodePreflight(sp, dir, true); err != nil {
+		t.Errorf("force: %v", err)
+	}
+}

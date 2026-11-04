@@ -20,7 +20,8 @@ type Limits struct {
 }
 
 // ModelInfo reads per-model token limits from LiteLLM's /v1/model/info,
-// falling back to /model/info. Context is max_input_tokens, else max_tokens.
+// falling back to /model/info. Context is max_input_tokens; output is
+// max_output_tokens, else the legacy max_tokens.
 func ModelInfo(ctx context.Context, baseURL, key string) (map[string]Limits, error) {
 	base := strings.TrimRight(baseURL, "/")
 	var lastErr error = ErrNoModelInfo
@@ -55,8 +56,8 @@ func ModelInfo(ctx context.Context, baseURL, key string) (map[string]Limits, err
 				continue
 			}
 			l := Limits{Context: d.ModelInfo.MaxInputTokens, Output: d.ModelInfo.MaxOutputTokens}
-			if l.Context == 0 {
-				l.Context = d.ModelInfo.MaxTokens
+			if l.Output == 0 {
+				l.Output = d.ModelInfo.MaxTokens // LiteLLM's legacy field means output, not context
 			}
 			out[d.ModelName] = l
 		}

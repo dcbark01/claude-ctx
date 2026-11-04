@@ -70,8 +70,8 @@ interactive picker is shown.`,
 			return fmt.Errorf("managed settings were modified outside claude-ctx since the last switch (context %q); review %s or re-run with --force",
 				settings.Current(doc), settingsPath())
 		}
-		if doOpencode && !useForce {
-			if err := opencodeDriftError(statePath()); err != nil {
+		if doOpencode {
+			if err := opencodePreflight(statePath(), opencodeDir(), useForce); err != nil {
 				return err
 			}
 		}

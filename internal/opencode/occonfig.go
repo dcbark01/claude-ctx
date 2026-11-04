@@ -165,7 +165,9 @@ func formatAdded(v *hujson.Value, added map[string]bool, trailingComma bool) {
 		if !ok || !added[name.String()] {
 			continue
 		}
-		m.Name.BeforeExtra = append([]byte(nil), indent...)
+		// hujson moves a same-line comment of the previous member here; keep it.
+		lead := bytes.TrimRight(m.Name.BeforeExtra, " \t\r\n")
+		m.Name.BeforeExtra = append(append([]byte(nil), lead...), indent...)
 		m.Name.AfterExtra = nil
 		m.Value.BeforeExtra = []byte(" ")
 	}
