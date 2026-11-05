@@ -167,7 +167,7 @@ claude-ctx run local --client opencode -- run "hello"   # this terminal only
 ```
 
 - **Providers.** The plugin asks `claude-ctx opencode providers --json` for one provider per context (`ctx-<name>`, Anthropic protocol at `<base_url>/v1`). It lists `model` plus any `model_aliases` (and, with `discovery = true`, every gateway model), and reloads when `config.toml` changes. All contexts sit in opencode's model picker at once.
-- **Keys never touch disk.** Before each model request the plugin sets `x-api-key` from `claude-ctx credential --context <name>`, held in opencode's memory for `key_ttl_ms`. A 401 drops the cached key. If the key can't be fetched (e.g. a cold gpg-agent; there is no terminal for pinentry inside opencode), the request fails with a message to run `claude-ctx doctor <ctx>`. `use` and `run` check the credential in the foreground first, which warms the cache.
+- **Keys never touch disk.** Before each model request the plugin sets `x-api-key` and `Authorization: Bearer` (as Claude Code does) from `claude-ctx credential --context <name>`, held in opencode's memory for `key_ttl_ms`. A 401 drops the cached key. If the key can't be fetched (e.g. a cold gpg-agent; there is no terminal for pinentry inside opencode), the request fails with a message to run `claude-ctx doctor <ctx>`. `use` and `run` check the credential in the foreground first, which warms the cache.
 - **`use`** sets `model` (and `small_model`, from a `haiku` alias) in `~/.config/opencode/opencode.json[c]`, keeping your comments and formatting. What it wrote is recorded in `~/.claude/context/state.json`; edits made outside claude-ctx are detected (`--force` overrides), and `unset` restores the values you had before.
 - **`run --client opencode`** execs `opencode --standalone` with `OPENCODE_CONFIG_CONTENT` selecting the context's models. Nothing is written; set `defaults.client = "opencode"` to make it the default.
 - **Model limits.** opencode needs a context window to know when to compact. `use`, `run`, `doctor` and `add` read it from LiteLLM's `/model/info` in the foreground and keep it in `~/.claude/context/cache.json` (model lists and limits only, never keys). Set `context_limit` / `output_limit` to override.
@@ -235,7 +235,10 @@ Writes are atomic (temp file + rename, mode preserved) and the previous contents
 make build   # → ./claude-ctx
 make test    # go test ./... -race, plus the plugin's `bun test` when bun is installed
 make lint
+make e2e     # end-to-end; fetches a pinned agentgateway into .bin/ on first run
 ```
+
+`make e2e` builds this checkout and runs it against a real [agentgateway](https://agentgateway.dev) (which requires a client key) in front of a mock Anthropic upstream (which requires a different key), with the real `opencode` and `claude` binaries in a throwaway `HOME`. It covers `run` and `use` for both clients, wrong-key and credential-failure paths, and checks that no key reaches any file the clients write (including opencode's database and logs). Tests for a client that isn't on PATH are skipped; override binaries with `AGENTGATEWAY_BIN`, `OPENCODE_BIN`, `CLAUDE_BIN`.
 
 Test against scratch files, never your real settings:
 

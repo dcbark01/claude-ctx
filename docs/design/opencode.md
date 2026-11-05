@@ -117,3 +117,13 @@ Working plugin API (from `packages/plugin/src/promise/*`):
 - `ctx.session.hook("http.response", r => …)`: `r.model.providerID`, `r.response.status`. **A throw here hangs
   the request** — this hook must never throw.
 - `opencode --standalone` is a global flag accepted before any subcommand.
+
+### End-to-end against agentgateway (2026-11-05, agentgateway v1.7.0)
+
+`make e2e` (`e2e/`) runs opencode v2.2.5 and Claude Code through a real agentgateway with
+`apiKey: { mode: strict }`. It found two bugs the mock spike could not:
+- agentgateway reads the client key from `Authorization: Bearer` by default and ignores `x-api-key`, so
+  the plugin's `x-api-key`-only requests got 401. The plugin now sends both, as Claude Code's
+  `apiKeyHelper` does.
+- agentgateway answers unknown paths (`/model/info`) with HTTP 400, not 404, so every `use`/`run` warned.
+  400, 404, 405 and 501 now all mean "no `/model/info`"; 401/403/5xx still warn.
