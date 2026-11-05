@@ -61,6 +61,28 @@ func TestModelInfoUnsupported(t *testing.T) {
 	}
 }
 
+// Non-LiteLLM gateways answer an unknown path with other client errors
+// (agentgateway: 400), which must also read as "no /model/info", while auth
+// and server failures stay real errors.
+func TestModelInfoUnsupportedStatuses(t *testing.T) {
+	for _, code := range []int{http.StatusBadRequest, http.StatusMethodNotAllowed, http.StatusNotImplemented} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(code) }))
+		_, err := ModelInfo(context.Background(), srv.URL, "k")
+		srv.Close()
+		if !errors.Is(err, ErrNoModelInfo) {
+			t.Errorf("HTTP %d: err = %v, want ErrNoModelInfo", code, err)
+		}
+	}
+	for _, code := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusInternalServerError} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(code) }))
+		_, err := ModelInfo(context.Background(), srv.URL, "k")
+		srv.Close()
+		if err == nil || errors.Is(err, ErrNoModelInfo) {
+			t.Errorf("HTTP %d: err = %v, want a real error", code, err)
+		}
+	}
+}
+
 func TestModelInfoMaxTokensIsOutputOnly(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"data":[{"model_name":"p","model_info":{"max_tokens":8192}},

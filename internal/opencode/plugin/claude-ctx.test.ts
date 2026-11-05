@@ -1,11 +1,19 @@
 import { describe, expect, test } from "bun:test"
-import plugin, { KeyCache, contextFor, credentialError, loadProviders, modelInfo, providerInfo } from "./claude-ctx.ts"
+import plugin, { KeyCache, authHeaders, contextFor, credentialError, loadProviders, modelInfo, providerInfo } from "./claude-ctx.ts"
 
 describe("contextFor", () => {
   test("maps ctx- providers to context names", () => {
     expect(contextFor("ctx-opus-b")).toBe("opus-b")
     expect(contextFor("anthropic")).toBeUndefined()
     expect(contextFor("ctx-")).toBeUndefined()
+  })
+})
+
+describe("authHeaders", () => {
+  // Gateways differ: LiteLLM/Anthropic read x-api-key, agentgateway (by default)
+  // and many proxies read Authorization: Bearer. Claude Code sends both.
+  test("sends the key as x-api-key and as a bearer token", () => {
+    expect(authHeaders("k1")).toEqual({ "x-api-key": "k1", authorization: "Bearer k1" })
   })
 })
 

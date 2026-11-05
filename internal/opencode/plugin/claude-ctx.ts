@@ -1,8 +1,9 @@
 // claude-ctx opencode plugin. Installed by `claude-ctx opencode install`; do not edit.
 //
 // Defines one provider per claude-ctx context (ctx-<name>) and sets x-api-key
-// on every model request from `claude-ctx credential --context <name>`. Keys
-// live only in this process's memory; nothing is written to disk.
+// and Authorization: Bearer on every model request from
+// `claude-ctx credential --context <name>`. Keys live only in this process's
+// memory; nothing is written to disk.
 import type { Plugin } from "@opencode/plugin"
 import { spawn } from "node:child_process"
 import { watch, type FSWatcher } from "node:fs"
@@ -47,6 +48,11 @@ export function contextFor(providerID: string): string | undefined {
 
 export function credentialError(name: string): Error {
   return new Error(`credential for ${name} unavailable — run \`claude-ctx doctor ${name}\` (gpg-agent cache may be cold)`)
+}
+
+/** Request headers carrying key: x-api-key and a bearer token, as Claude Code's apiKeyHelper sends. */
+export function authHeaders(key: string): Record<string, string> {
+  return { "x-api-key": key, authorization: `Bearer ${key}` }
 }
 
 /** In-memory key cache: one in-flight fetch per context, entries expire after ttlMs. */
@@ -171,7 +177,7 @@ const plugin: Plugin = {
     await ctx.session.hook("model.request", async (r) => {
       const name = contextFor(r.model.providerID)
       if (!name || !current.providers.some((p) => p.context === name)) return
-      r.headers["x-api-key"] = await keys.get(name)
+      Object.assign(r.headers, authHeaders(await keys.get(name)))
     })
 
     // A throw in this hook hangs the request (verified on opencode v2.2.5), so never throw.

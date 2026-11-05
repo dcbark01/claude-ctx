@@ -30,7 +30,7 @@ func ModelInfo(ctx context.Context, baseURL, key string) (map[string]Limits, err
 		if err != nil {
 			return nil, err
 		}
-		if status == http.StatusNotFound {
+		if noEndpoint(status) {
 			continue
 		}
 		if status/100 != 2 {
@@ -64,6 +64,17 @@ func ModelInfo(ctx context.Context, baseURL, key string) (map[string]Limits, err
 		return out, nil
 	}
 	return nil, lastErr
+}
+
+// noEndpoint reports whether status means the path does not exist. Gateways
+// other than LiteLLM answer unknown paths with 404, 405, 501 or (agentgateway)
+// 400; auth and server errors are real failures.
+func noEndpoint(status int) bool {
+	switch status {
+	case http.StatusBadRequest, http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusNotImplemented:
+		return true
+	}
+	return false
 }
 
 // get performs an authenticated GET and returns the (size-limited) body.
