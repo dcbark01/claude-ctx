@@ -5,3 +5,5 @@
 .vscode
 .DS_Store
 .env
+/.bin/
+/docs/

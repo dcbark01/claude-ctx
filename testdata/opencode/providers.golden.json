@@ -1,0 +1,47 @@
+[
+  {
+    "id": "ctx-local",
+    "context": "local",
+    "name": "claude-ctx: local",
+    "baseURL": "http://localhost:8080/v1",
+    "keyTtlMs": 3600000,
+    "models": [
+      {
+        "id": "q1",
+        "name": "q1",
+        "limit": {
+          "context": 32768,
+          "output": 4096
+        }
+      },
+      {
+        "id": "q2",
+        "name": "q2"
+      }
+    ],
+    "defaultModel": "ctx-local/q1"
+  },
+  {
+    "id": "ctx-opus-b",
+    "context": "opus-b",
+    "name": "claude-ctx: opus-b",
+    "baseURL": "https://litellm-b.internal/v1",
+    "keyTtlMs": 3600000,
+    "models": [
+      {
+        "id": "anthropic/claude-opus-5",
+        "name": "Opus 5 (B)",
+        "limit": {
+          "context": 150000,
+          "output": 64000
+        }
+      },
+      {
+        "id": "anthropic/claude-haiku-4-5",
+        "name": "anthropic/claude-haiku-4-5"
+      }
+    ],
+    "defaultModel": "ctx-opus-b/anthropic/claude-opus-5",
+    "smallModel": "ctx-opus-b/anthropic/claude-haiku-4-5"
+  }
+]

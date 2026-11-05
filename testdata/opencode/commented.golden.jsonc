@@ -1,0 +1,11 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  // my default model
+  "model": "ctx-a/m",
+  /* plugins I use */
+  "plugin": ["opencode-foo"],
+  "provider": {
+    "anthropic": { "options": { "timeout": 600000 } }, // trailing comma below
+  },
+  "small_model": "ctx-a/h",
+}

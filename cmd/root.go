@@ -3,14 +3,19 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/dcbark01/claude-ctx/internal/config"
 	"github.com/dcbark01/claude-ctx/internal/cred"
+	"github.com/dcbark01/claude-ctx/internal/gateway"
+	"github.com/dcbark01/claude-ctx/internal/metacache"
+	"github.com/dcbark01/claude-ctx/internal/opencode"
 	"github.com/dcbark01/claude-ctx/internal/render"
 	"github.com/dcbark01/claude-ctx/internal/settings"
 	"github.com/dcbark01/claude-ctx/internal/ui"
@@ -19,6 +24,7 @@ import (
 var (
 	flagConfig       string
 	flagSettingsPath string
+	flagOpencodeDir  string
 	version          = "dev"
 )
 
@@ -46,6 +52,7 @@ func Execute() {
 func init() {
 	rootCmd.PersistentFlags().StringVar(&flagConfig, "config", "", "config file (default $CLAUDE_CTX_CONFIG or ~/.claude/context/config.toml)")
 	rootCmd.PersistentFlags().StringVar(&flagSettingsPath, "settings-path", "", "Claude Code user settings file (default ~/.claude/settings.json)")
+	rootCmd.PersistentFlags().StringVar(&flagOpencodeDir, "opencode-dir", "", "opencode config directory (default $XDG_CONFIG_HOME/opencode or ~/.config/opencode)")
 }
 
 func configPath() string {
@@ -81,6 +88,14 @@ func loadConfig() (*config.Config, error) {
 	return c, nil
 }
 
+// opencodeDir is the opencode global config directory.
+func opencodeDir() string {
+	if flagOpencodeDir != "" {
+		return flagOpencodeDir
+	}
+	return opencode.DefaultDir()
+}
+
 func loadSettings() (map[string]any, error) {
 	return settings.Load(settingsPath())
 }
@@ -96,20 +111,78 @@ func currentName(doc map[string]any) string {
 // prime resolves the credential in the foreground (pinentry lands in this
 // terminal) and validates that it is non-empty. The key is discarded.
 func prime(c *config.Config, name string, timeout time.Duration) error {
+	_, err := primeKey(c, name, timeout)
+	return err
+}
+
+// primeKey is prime that hands the key back for in-process use (gateway
+// metadata refresh). The caller must never print or persist it.
+func primeKey(c *config.Config, name string, timeout time.Duration) (string, error) {
 	cx, err := c.Get(name)
 	if err != nil {
-		return err
+		return "", err
 	}
 	r, err := cred.ForContext(cx, c.Defaults)
 	if err != nil {
-		return err
+		return "", err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	if _, err := r.Resolve(ctx); err != nil {
-		return fmt.Errorf("credential check failed for %q: %w", name, err)
+	key, err := r.Resolve(ctx)
+	if err != nil {
+		return "", fmt.Errorf("credential check failed for %q: %w", name, err)
 	}
-	return nil
+	return key, nil
+}
+
+// refreshWarnings turns a metacache.Refresh error into warning lines. A gateway
+// without /model/info is normal (not LiteLLM) and is reported by doctor, not here.
+func refreshWarnings(name string, err error) []string {
+	if err == nil {
+		return nil
+	}
+	errs := []error{err}
+	if j, ok := err.(interface{ Unwrap() []error }); ok {
+		errs = j.Unwrap()
+	}
+	var out []string
+	for _, e := range errs {
+		if errors.Is(e, gateway.ErrNoModelInfo) {
+			continue
+		}
+		for _, line := range strings.Split(e.Error(), "\n") {
+			out = append(out, fmt.Sprintf("warning: %s: %s", name, line))
+		}
+	}
+	return out
+}
+
+// cachePath is the metadata cache next to the active config file.
+func cachePath() string { return metacache.PathFor(absConfigPath()) }
+
+// refreshMeta updates the gateway metadata cache for one context. It never
+// fails the caller: problems are printed as warnings and the previous entry
+// is kept for whatever could not be refreshed.
+func refreshMeta(c *config.Config, name, key string) {
+	cx, err := c.Get(name)
+	if err != nil {
+		return
+	}
+	cache, err := metacache.Load(cachePath())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, ui.Warn("warning: metadata cache unreadable, rebuilding: "+err.Error()))
+		cache = &metacache.Cache{Contexts: map[string]metacache.Entry{}}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*gateway.DefaultTimeout)
+	defer cancel()
+	fresh, rerr := metacache.Refresh(ctx, cx, key)
+	for _, w := range refreshWarnings(name, rerr) {
+		fmt.Fprintln(os.Stderr, ui.Warn(w))
+	}
+	cache.Contexts[name] = metacache.Merge(cache.Contexts[name], fresh)
+	if err := cache.Save(cachePath()); err != nil {
+		fmt.Fprintln(os.Stderr, ui.Warn("warning: could not save metadata cache: "+err.Error()))
+	}
 }
 
 // completeContexts is the cobra completion function for context-name args.
